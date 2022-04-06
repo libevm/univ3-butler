@@ -1,0 +1,27 @@
+name: CI
+on: [push]
+
+jobs:
+  run-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: onbjerg/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run Build
+        run: |
+          forge clean
+          forge build --optimize --optimize-runs 200
+
+      - name: Run Tests
+        env:
+          RPC_URL : ${{ secrets.RPC_URL }}
+        run: |
+          forge clean
+          forge test --optimize --optimize-runs 200 -v -f $RPC_URL
