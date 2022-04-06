@@ -7,8 +7,8 @@ import "./lib/test2.sol";
 import "./lib/MockToken.sol";
 import "./lib/Constants.sol";
 
-import "../Univ3ButlerLib.sol";
-import "../SingleSidedLiquidity.sol";
+import "../ButlerLib.sol";
+import "../SingleSidedLiquidityLib.sol";
 
 import "@uniswap-v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap-v3-core/contracts/interfaces/IUniswapV3Factory.sol";
@@ -20,8 +20,6 @@ contract SingleSidedLiquidityTest is DSTest2 {
     using SafeMath for uint256;
     using TickMath for uint160;
     using TickMath for int24;
-
-    Univ3SingleSidedLiquidity singleSidedLP;
 
     INonfungiblePositionManager nfpm =
         INonfungiblePositionManager(Constants.UNIV3_POS_MANAGER);
@@ -36,30 +34,36 @@ contract SingleSidedLiquidityTest is DSTest2 {
     int24 tickSpacing;
 
     function setUp() public {
+        // New random pool
         token0 = new MockToken();
         token1 = new MockToken();
-
         if (address(token0) > address(token1)) {
             address temp = address(token0);
             token0 = token1;
             token1 = MockToken(temp);
         }
-
         pool = IUniswapV3Pool(
             v3Factory.createPool(address(token0), address(token1), fee)
         );
 
-        uint160 sqrtPriceX96 = Univ3ButlerLib.encodePriceSqrt(1, 1000);
+        // 1000 token0 = 1 token1
+        uint160 sqrtPriceX96 = Univ3ButlerLib.encodePriceSqrt(
+            address(token0),
+            address(token1),
+            1000,
+            1
+        );
         pool.initialize(sqrtPriceX96);
         tickSpacing = pool.tickSpacing();
 
         // Add liquidity to pool
         // Get tick spacing
         (, int24 curTick, , , , , ) = pool.slot0();
-        curTick = curTick - (curTick % tickSpacing);
-
-        int24 lowerTick = curTick - (tickSpacing * 2);
-        int24 upperTick = curTick + (tickSpacing * 2);
+        (int24 lowerTick, int24 upperTick) = Univ3ButlerLib.validateTicks(
+            tickSpacing,
+            curTick - (tickSpacing * 2),
+            curTick + (tickSpacing * 2)
+        );
 
         token0.mint(address(this), 1000e18);
         token0.approve(address(nfpm), uint256(-1));
@@ -71,6 +75,7 @@ contract SingleSidedLiquidityTest is DSTest2 {
         token1.approve(address(v3router), uint256(-1));
         token1.approve(address(pool), uint256(-1));
 
+        // Create initial position
         nfpm.mint(
             INonfungiblePositionManager.MintParams({
                 token0: pool.token0(),
@@ -87,26 +92,26 @@ contract SingleSidedLiquidityTest is DSTest2 {
             })
         );
 
-        singleSidedLP = new Univ3SingleSidedLiquidity();
-
+        // Burn remaining tokens
         token0.burn(token0.balanceOf(address(this)));
         token1.burn(token1.balanceOf(address(this)));
     }
 
     function test_getParamsForSingleSidedAmount_0() public {
-        int24 lowerTick = Univ3ButlerLib
-            .encodePriceSqrt(address(token0), address(token1), 1, 950)
-            .getTickAtSqrtRatio();
-        lowerTick = lowerTick - (lowerTick % tickSpacing);
-        int24 upperTick = Univ3ButlerLib
-            .encodePriceSqrt(address(token0), address(token1), 1, 1050)
-            .getTickAtSqrtRatio();
-        upperTick = upperTick - (upperTick % tickSpacing) + tickSpacing;
+        (int24 lowerTick, int24 upperTick) = Univ3ButlerLib.validateTicks(
+            tickSpacing,
+            Univ3ButlerLib
+                .encodePriceSqrt(address(token0), address(token1), 1, 950)
+                .getTickAtSqrtRatio(),
+            Univ3ButlerLib
+                .encodePriceSqrt(address(token0), address(token1), 1, 1050)
+                .getTickAtSqrtRatio()
+        );
 
         uint256 amountIn = 10e18;
 
         // Get optimal liquidity
-        (uint256 liquidityProjected, uint256 token0ToSwap) = singleSidedLP
+        (uint256 liquidityProjected, uint256 token0ToSwap) = SingleSidedLiquidityLib
             .getParamsForSingleSidedAmount(
                 address(pool),
                 lowerTick,
@@ -152,20 +157,21 @@ contract SingleSidedLiquidityTest is DSTest2 {
         );
     }
 
-     function test_getParamsForSingleSidedAmount_1() public {
-        int24 lowerTick = Univ3ButlerLib
-            .encodePriceSqrt(address(token0), address(token1), 1, 950)
-            .getTickAtSqrtRatio();
-        lowerTick = lowerTick - (lowerTick % tickSpacing);
-        int24 upperTick = Univ3ButlerLib
-            .encodePriceSqrt(address(token0), address(token1), 1, 1050)
-            .getTickAtSqrtRatio();
-        upperTick = upperTick - (upperTick % tickSpacing) + tickSpacing;
+    function test_getParamsForSingleSidedAmount_1() public {
+        (int24 lowerTick, int24 upperTick) = Univ3ButlerLib.validateTicks(
+            tickSpacing,
+            Univ3ButlerLib
+                .encodePriceSqrt(address(token0), address(token1), 1, 950)
+                .getTickAtSqrtRatio(),
+            Univ3ButlerLib
+                .encodePriceSqrt(address(token0), address(token1), 1, 1050)
+                .getTickAtSqrtRatio()
+        );
 
         uint256 amountIn = 10e18;
 
-        // Get optimal liquidity
-        (uint256 liquidityProjected, uint256 token1ToSwap) = singleSidedLP
+        // Get optimal liquidity and token to swap to
+        (uint256 liquidityProjected, uint256 token1ToSwap) = SingleSidedLiquidityLib
             .getParamsForSingleSidedAmount(
                 address(pool),
                 lowerTick,

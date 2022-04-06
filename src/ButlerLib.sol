@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity =0.7.6;
+pragma solidity ^0.7.0;
 
 import "v3-periphery/interfaces/IQuoterV2.sol";
 import "v3-core/libraries/TickMath.sol";
@@ -9,6 +9,22 @@ import "v3-core/interfaces/IUniswapV3Pool.sol";
 library Univ3ButlerLib {
     uint256 constant PRECISION = 2**96;
 
+    /// @notice Validates ticks to be multiples of tickSpacing
+    function validateTicks(
+        int24 tickSpacing,
+        int24 lowerTick,
+        int24 upperTick
+    ) public pure returns (int24, int24) {
+        lowerTick = lowerTick - (lowerTick % tickSpacing);
+
+        if (upperTick % tickSpacing != 0) {
+            upperTick = upperTick - (upperTick % tickSpacing) + tickSpacing;
+        }
+
+        return (lowerTick, upperTick);
+    }
+
+    /// @notice Converts sqrtPriceX96/sqrtRatioX96 of a given pool to spot price (assuming `amount` is 1 baseToken)
     function decodePriceSqrt(
         uint256 amount,
         IUniswapV3Pool pool,
@@ -34,6 +50,9 @@ library Univ3ButlerLib {
         }
     }
 
+    /// @notice Converts sqrtPrice into (amount * token0) = X token1
+    ///         Enter amount as 10**token0.decimals() to get spot price
+    ///         of X token0 = 1 token1
     function decodePriceSqrt(uint256 amount, uint160 sqrtPriceX96)
         public
         pure
@@ -43,7 +62,7 @@ library Univ3ButlerLib {
         return FullMath.mulDiv(priceX192, amount, 1 << 128);
     }
 
-    // Computes the sqrt of the u64x96 fixed point price given the AMM reserves
+    /// @notice Encodes 1 token0 = X token1
     function encodePriceSqrt(uint256 reserve1, uint256 reserve0)
         public
         pure
@@ -52,6 +71,8 @@ library Univ3ButlerLib {
         return uint160(sqrt((reserve1 * PRECISION * PRECISION) / reserve0));
     }
 
+    /// @notice Encodes R0 A0 = R1 A1, e.g. encodePriceSqrt(WETH, DAI, 1, 1000)
+    ///         Would mean 1 WETH = 1000 DAI
     function encodePriceSqrt(
         address a1,
         address a0,

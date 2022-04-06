@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity =0.7.6;
+pragma solidity ^0.7.0;
 pragma abicoder v2;
 
-import "v3-periphery/interfaces/IQuoterV2.sol";
-import "v3-core/libraries/TickMath.sol";
-import "v3-core/interfaces/IUniswapV3Pool.sol";
-import "v3-periphery/libraries/LiquidityAmounts.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
+import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
+
+import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -17,7 +18,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 ///         that consists of tokenA/tokenB, where the range we want to add is within range of
 ///         the current sqrtRatioX96
 /// @dev Should be called off-chain, very gas intensive
-contract Univ3SingleSidedLiquidity {
+library SingleSidedLiquidityLib {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
     using TickMath for int24;
@@ -25,7 +26,7 @@ contract Univ3SingleSidedLiquidity {
     // Uniswap QuoterV2
     // We need the v2 quoter as it provides us with more information post swap
     // e.g. post-swap sqrtRatioX96
-    IQuoterV2 internal quoter =
+    IQuoterV2 internal constant quoter =
         IQuoterV2(0x61fFE014bA17989E743c5F6cB21bF9697530B21e);
 
     // Min / Max Sqrt ratios
@@ -34,10 +35,10 @@ contract Univ3SingleSidedLiquidity {
         1461446703485210103287273052203988822378723970341;
 
     // Binary search params
-    uint256 internal BINARY_SERACH_MAX_ITERATIONS = 128;
-    uint256 internal MAX_ERROR_THRESHOLD = 1e6;
+    uint256 internal constant BINARY_SERACH_MAX_ITERATIONS = 128;
+    uint256 internal constant DUST_THRESHOLD = 1e6;
 
-    // Stack too deep errors reeee
+    // Structs to avoid stack too deep errors reeee
     struct Cache {
         address tokenIn;
         address tokenOut;
@@ -157,6 +158,14 @@ contract Univ3SingleSidedLiquidity {
                 // Trim some dust
                 cache.leftoverAmount0 = cache.leftoverAmount0.div(100).mul(100);
                 cache.leftoverAmount1 = cache.leftoverAmount1.div(100).mul(100);
+            }
+
+            // Termination condition, we approximated enough
+            if (
+                cache.leftoverAmount0 <= DUST_THRESHOLD &&
+                cache.leftoverAmount1 <= DUST_THRESHOLD
+            ) {
+                break;
             }
 
             if (isAmountInToken0) {
