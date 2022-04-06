@@ -24,4 +24,4 @@ jobs:
           RPC_URL : ${{ secrets.RPC_URL }}
         run: |
           forge clean
-          forge test --optimize --optimize-runs 200 -v -f $RPC_URL
+          forge test --optimize --optimize-runs 200 -v -f https://mainnet.infura.io/v3/84842078b09946638c03157f83405213
